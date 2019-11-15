@@ -140,6 +140,7 @@
 #pragma mark - Setup
 
 - (CGFloat)initialZoomScaleWithMinScale {
+    CGFloat minZoom = self.minimumZoomScale;
     CGFloat zoomScale = self.minimumZoomScale;
     if (_photoImageView) {
         // Zoom image to fill if the aspect ratios are fairly similar
@@ -153,7 +154,7 @@
         if (ABS(boundsAR - imageAR) < 0.17) {
             zoomScale = MAX(xScale, yScale);
             // Ensure we don't zoom in or out too far, just in case
-            zoomScale = MIN(MAX(self.minimumZoomScale, zoomScale), self.maximumZoomScale);
+            zoomScale = MIN(MAX(minZoom, zoomScale), minZoom);
         }
     }
     return zoomScale;
@@ -285,62 +286,60 @@
 #pragma mark - Setter
 
 - (void)setSource:(NSDictionary *)source {
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if ([_source isEqualToDictionary:source]) {
-            return;
-        }
-        NSString *uri = source[@"uri"];
-        if (!uri) {
-            return;
-        }
-        _source = source;
-        NSURL *imageURL = [NSURL URLWithString:uri];
-        UIImage *image = RCTImageFromLocalAssetURL(imageURL);
-        if (image) { // if local image
-            [self setImage:image];
-            return;
-        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            if ([self->_source isEqualToDictionary:source]) {
+                return;
+            }
+            NSString *uri = source[@"uri"];
+            if (!uri) {
+                return;
+            }
+            self->_source = source;
+            NSURL *imageURL = [NSURL URLWithString:uri];
+            UIImage *image = RCTImageFromLocalAssetURL(imageURL);
+            if (image) { // if local image
+                [self setImage:image];
+                return;
+            }
 
-        NSURLRequest *request = [[NSURLRequest alloc] initWithURL:imageURL];
+            NSURLRequest *request = [[NSURLRequest alloc] initWithURL:imageURL];
 
-        __weak RNPhotoView *weakSelf = self;
-        if (_onPhotoViewerLoadStart) {
-            _onPhotoViewerLoadStart(nil);
-        }
+            __weak RNPhotoView *weakSelf = self;
+            if (self->_onPhotoViewerLoadStart) {
+                self->_onPhotoViewerLoadStart(nil);
+            }
 
-        // use default values from [imageLoader loadImageWithURLRequest:request callback:callback] method
-        [_bridge.imageLoader loadImageWithURLRequest:request
-                                        size:CGSizeZero
-                                       scale:1
-                                     clipped:YES
-                                  resizeMode:RCTResizeModeStretch
-                               progressBlock:^(int64_t progress, int64_t total) {
-                                   if (_onPhotoViewerProgress) {
-                                       _onPhotoViewerProgress(@{
-                                           @"loaded": @((double)progress),
-                                           @"total": @((double)total),
-                                       });
+            // use default values from [imageLoader loadImageWithURLRequest:request callback:callback] method
+            [self->_bridge.imageLoader loadImageWithURLRequest:request
+                                            size:CGSizeZero
+                                           scale:1
+                                         clipped:YES
+                                      resizeMode:RCTResizeModeStretch
+                                   progressBlock:^(int64_t progress, int64_t total) {
+                                            RNPhotoView *strongSelf = weakSelf;
+                                            if (strongSelf->_onPhotoViewerProgress) {
+                                                strongSelf->_onPhotoViewerProgress(@{
+                                               @"loaded": @((double)progress),
+                                               @"total": @((double)total),
+                                           });
+                                       }
                                    }
-                               }
-                            partialLoadBlock:nil
-                             completionBlock:^(NSError *error, UIImage *image) {
-                                                if (image) {
-                                                    dispatch_async(dispatch_get_main_queue(), ^{
-                                                        [weakSelf setImage:image];
-                                                    });
-                                                    if (_onPhotoViewerLoad) {
-                                                        _onPhotoViewerLoad(nil);
+                                partialLoadBlock:nil
+                                 completionBlock:^(NSError *error, UIImage *image) {
+                                                    RNPhotoView *strongSelf = weakSelf;
+                                                    if (image) {
+                                                        dispatch_sync(dispatch_get_main_queue(), ^{
+                                                            [weakSelf setImage:image];
+                                                        });
+                                                        if (strongSelf->_onPhotoViewerLoad) {
+                                                            strongSelf->_onPhotoViewerLoad(nil);
+                                                        }
                                                     }
-                                                } else {
-                                                    if (_onPhotoViewerError) {
-                                                        _onPhotoViewerError(nil);
+                                                    if (strongSelf->_onPhotoViewerLoadEnd) {
+                                                        strongSelf->_onPhotoViewerLoadEnd(nil);
                                                     }
-                                                }
-                                                if (_onPhotoViewerLoadEnd) {
-                                                    _onPhotoViewerLoadEnd(nil);
-                                                }
-                                            }];
-    });
+                                                }];
+        });
 }
 
 - (void)setLoadingIndicatorSrc:(NSString *)loadingIndicatorSrc {
